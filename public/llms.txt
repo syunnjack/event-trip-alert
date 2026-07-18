@@ -1,0 +1,7 @@
+# Event Trip Alert
+
+ライブ、スポーツ、展示会の開催日から宿、交通、周辺飲食、グッズへつなげる遠征通知サービス。
+
+Notification channels: LINE, X, email, Slack
+Revenue: 宿泊送客, 交通送客, 飲食店掲載, グッズ affiliate, スポンサー枠
+Primary categories: ライブ, スポーツ, 展示会, 宿泊, 交通
