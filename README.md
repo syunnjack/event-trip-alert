@@ -8,7 +8,7 @@ Recommended repository name: `event-trip-alert`
 
 ## Domain candidates
 
-First candidate: `eventtripalert.jp`
+Confirmed domain: `eventtripalert.jp`
 
 Other candidates:
 
