@@ -1,3 +1,4 @@
 User-agent: *
 Allow: /
-Sitemap: https://eventtripalert.jp/sitemap.xml
+
+Sitemap: https://event-trip-alert.vercel.app/sitemap.xml
