@@ -7,6 +7,10 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+  # データ更新のワークフローから呼べるようにする。
+  # Actions が自分でコミットした push では、他のワークフローが起動しない
+  # （無限ループ防止の仕様）ため、取得したデータが本番に出ないままだった。
+  workflow_call:
 
 jobs:
   deploy:

@@ -50,3 +50,9 @@ jobs:
           # そのままでは push が弾かれるので、取り込んでから送る。
           git pull --rebase origin ${GITHUB_REF_NAME}
           git push origin HEAD:${GITHUB_REF_NAME}
+
+  # 取得したデータを本番へ届ける。
+  deploy:
+    needs: refresh
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
