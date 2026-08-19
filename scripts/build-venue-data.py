@@ -27,9 +27,11 @@ OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.osm.ch/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass.osm.jp/api/interpreter',
 ]
 UA = 'event-trip-alert-data/1.0 (+https://eventtripalert.jp)'
-DELAY = 6.0
+DELAY = 4.0
 
 PREFECTURES = [
     '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県',
@@ -49,7 +51,8 @@ VENUE_KINDS = [
     ('amenity=theatre', '劇場・ホール'),
 ]
 
-QUERY = """
+# 会場と駅は別々に取る。ひとつにまとめると重すぎて 504 が返ることが多い。
+VENUE_QUERY = """
 [out:json][timeout:300];
 area["name"="{prefecture}"]["admin_level"="4"]->.pref;
 (
@@ -58,22 +61,35 @@ area["name"="{prefecture}"]["admin_level"="4"]->.pref;
   nwr["amenity"="music_venue"]["name"](area.pref);
   nwr["amenity"="exhibition_centre"]["name"](area.pref);
   nwr["amenity"="theatre"]["name"](area.pref);
-  nwr["railway"="station"]["name"](area.pref);
 );
 out tags center;
+"""
+
+# 駅は点で十分。全国ぶんを一度に取れるので、都道府県ごとには問い合わせない。
+STATION_QUERY = """
+[out:json][timeout:420];
+area["name"="日本"]["admin_level"="2"]->.jp;
+node["railway"="station"]["name"](area.jp);
+out;
 """
 
 DENY_NAME = re.compile('跡$|跡地|予定地|案内図')
 
 
-def fetch(prefecture: str) -> list[dict]:
+def fetch(prefecture: str, query: str, suffix: str) -> list[dict]:
     CACHE.mkdir(exist_ok=True)
-    path = CACHE / f'overpass-{PREFECTURES.index(prefecture):02d}.json'
+    path = CACHE / f'{suffix}-{PREFECTURES.index(prefecture):02d}.json'
 
     if path.exists():
         return json.loads(path.read_text(encoding='utf-8'))
 
-    body = urllib.parse.urlencode({'data': QUERY.format(prefecture=prefecture)}).encode()
+    return fetch_query(query.format(prefecture=prefecture), path)
+
+
+def fetch_query(query: str, path: Path) -> list[dict]:
+    """Overpass へ問い合わせて、結果を path に残す。"""
+    CACHE.mkdir(exist_ok=True)
+    body = urllib.parse.urlencode({'data': query}).encode()
     payload = None
     last_error = None
 
@@ -93,7 +109,7 @@ def fetch(prefecture: str) -> list[dict]:
         except Exception as error:
             last_error = error
             wait = DELAY * (attempt + 1)
-            print(f'  {prefecture}: {error} のため {wait:.0f} 秒待って別のサーバで再試行します', flush=True)
+            print(f"  {error} のため {wait:.0f} 秒待って別のサーバで再試行します", flush=True)
             time.sleep(wait)
 
     if payload is None:
@@ -134,30 +150,55 @@ def coordinates(element: dict) -> tuple[float, float] | None:
     return float(lat), float(lng)
 
 
+def all_stations() -> list[tuple[str, tuple[float, float]]]:
+    """全国の鉄道駅。会場から最も近いものを選ぶために使う。"""
+    path = CACHE / 'stations-japan.json'
+
+    if path.exists():
+        elements = json.loads(path.read_text(encoding='utf-8'))
+    else:
+        elements = fetch_query(STATION_QUERY, path)
+
+    stations = []
+    for element in elements:
+        name = (element.get('tags', {}).get('name') or '').strip()
+        position = coordinates(element)
+
+        if name and position:
+            stations.append((name, position))
+
+    return stations
+
+
 def main() -> None:
     output = Path(sys.argv[1])
+    stations = all_stations()
+    print(f'駅 {len(stations)}件を読み込みました', flush=True)
+
+    # 第2引数に「0-15」のように書くと、その範囲の都道府県だけを取りに行く。
+    # Overpass が重い日に、何本かに分けて取得するために使う。
+    targets = PREFECTURES
+    if len(sys.argv) > 2:
+        start, end = (int(part) for part in sys.argv[2].split('-'))
+        targets = PREFECTURES[start:end]
+        print(f'{targets[0]}〜{targets[-1]} だけを取得します', flush=True)
+
     venues = []
 
-    for prefecture in PREFECTURES:
+    for prefecture in targets:
         try:
-            elements = fetch(prefecture)
+            elements = fetch(prefecture, VENUE_QUERY, 'venues')
         except Exception as error:
             print(f'{prefecture} の取得に失敗しました: {error}', flush=True)
             continue
 
-        stations = []
         found = []
-
         for element in elements:
             tags = element.get('tags', {})
             name = (tags.get('name') or '').strip()
             position = coordinates(element)
 
             if not name or position is None:
-                continue
-
-            if tags.get('railway') == 'station':
-                stations.append((name, position))
                 continue
 
             kind = kind_of(tags)
