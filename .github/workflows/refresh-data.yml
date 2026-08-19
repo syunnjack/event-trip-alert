@@ -45,4 +45,8 @@ jobs:
 
           scripts/build-venue-data.py の実行による更新。
           出典: OpenStreetMap contributors（ODbL 1.0）"
-          git push
+
+          # 取得に時間がかかる間に main が進んでいることがある。
+          # そのままでは push が弾かれるので、取り込んでから送る。
+          git pull --rebase origin ${GITHUB_REF_NAME}
+          git push origin HEAD:${GITHUB_REF_NAME}
