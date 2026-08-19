@@ -1,5 +1,8 @@
 name: Deploy to Xserver
 
+# 公開先は eventtripalert.jp。
+# 会場データは database/data/venues.json に置いてあり、データベースは使わない。
+# migrate も seed も不要。
 on:
   push:
     branches: [main, master]
@@ -11,25 +14,84 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: shivammathur/setup-php@v2
         with:
-          node-version: '20'
+          php-version: '8.3'
+          tools: composer
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install PHP dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction
 
-      - name: Build
-        run: npm run build
-
-      - name: Deploy to Xserver via rsync
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+      - name: Write production .env
         run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p 10022 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key -p 10022" ./dist/ "$SSH_USERNAME@$SSH_HOST:/home/xs501620/eventtripalert.jp/public_html/"
+          cat > .env <<EOF
+          APP_NAME="イベント遠征アラート"
+          APP_ENV=production
+          APP_KEY=${{ secrets.APP_KEY }}
+          APP_DEBUG=false
+          APP_URL=https://eventtripalert.jp
+          APP_LOCALE=ja
+          APP_FALLBACK_LOCALE=ja
+          LOG_CHANNEL=stack
+          LOG_LEVEL=error
+          CACHE_STORE=file
+          SESSION_DRIVER=file
+          QUEUE_CONNECTION=sync
+          DB_CONNECTION=sqlite
+          GA_MEASUREMENT_ID=${{ secrets.GA_MEASUREMENT_ID }}
+          GOOGLE_SITE_VERIFICATION=${{ secrets.GOOGLE_SITE_VERIFICATION }}
+          EOF
+
+      - name: Deploy app via rsync over SSH
+        uses: burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -avzr --delete --exclude=".git" --exclude=".github" --exclude="node_modules" --exclude="tests" --exclude="storage/app" --exclude="storage/logs" --exclude="storage/framework"
+          path: ./
+          remote_path: /home/xs501620/eventtripalert.jp/app/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_port: '10022'
+          remote_user: ${{ secrets.SSH_USERNAME }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Prepare directories and public_html link
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: 10022
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -ex
+            cd /home/xs501620/eventtripalert.jp
+            # cache ストアが file なので data まで作る。これが無いと
+            # artisan cache:clear が「Failed to clear cache」で落ちる。
+            mkdir -p app/storage/framework/cache/data app/storage/framework/sessions app/storage/framework/views app/storage/logs app/storage/app
+            chmod -R 775 app/storage
+
+            # public_html が実体のディレクトリなら、中に別のものが入っている
+            # 可能性があるので消さずに中断する。
+            if [ -e public_html ] && [ ! -L public_html ]; then
+              echo "public_html がシンボリックリンクではありません。中断します。" >&2
+              exit 1
+            fi
+
+            if [ ! -L public_html ]; then
+              ln -s app/public public_html
+            fi
+
+      - name: Clear caches
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: 10022
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -ex
+            cd /home/xs501620/eventtripalert.jp/app
+            PHP=$(command -v php8.3 || command -v php || echo /opt/php-8.3.30/bin/php)
+            $PHP -v | head -1
+            $PHP artisan config:clear
+            $PHP artisan route:clear
+            $PHP artisan view:clear
+            $PHP artisan cache:clear

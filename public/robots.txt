@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://event-trip-alert.vercel.app/sitemap.xml

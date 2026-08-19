@@ -1,49 +1,46 @@
-# Event Trip Alert
+# イベント遠征アラート（eventtripalert.jp）
 
-ライブ・イベント遠征アラート
+ライブ・スポーツ・展示会で遠征するときに、**会場の場所と最寄り駅**を調べるサイト。
 
-## Repository
+## 経緯
 
-Recommended repository name: `event-trip-alert`
+このリポジトリには以前、React の静的ページに「ライブ alert seed 1」といった
+架空の項目と、「収益導線」「技術選定」「MVPは静的seed + localStorage」などの
+運営側のメモがそのまま入っており、それが本番で公開されていた。
+すべて削除し、出典をたどれる実データだけを載せる構成に作り直した。
 
-## Domain candidates
+## データ
 
-Confirmed domain: `eventtripalert.jp`
+| 内容 | 出所 |
+|---|---|
+| 会場（スタジアム・イベントホール・ライブハウス・展示場・劇場） | OpenStreetMap（ODbL 1.0） |
+| 最寄り駅と距離 | 同じ地図データの鉄道駅から、直線距離で最も近いものを機械的に選定 |
 
-Other candidates:
+**扱っていないもの**: 公演・試合の予定、チケット、宿や交通の予約。
 
-- `eventtripalert.jp`
-- `enseialert.jp`
-- `livestay.jp`
-- `eventstay.jp`
+## データの更新
 
-## Concept
-
-ライブ、スポーツ、展示会の開催日から宿、交通、周辺飲食、グッズへつなげる遠征通知サービス。
-
-## Technical Selection
-
-- Frontend: Vite + React 19
-- Styling: Plain CSS
-- Initial data: Static alert seed records in `src/App.jsx`
-- Local state: localStorage for MVP saved alerts and UGC requests
-- Notification integrations: LINE Messaging API, X API, transactional email provider, Slack Incoming Webhooks
-- Future data layer: Supabase or Cloudflare D1
-- SEO/AIO/LLMO: structured data, answer block, FAQ, sitemap, robots and `llms.txt`
-
-## Revenue Paths
-
-- 宿泊送客
-- 交通送客
-- 飲食店掲載
-- グッズ affiliate
-- スポンサー枠
-
-## Commands
-
-```bash
-npm install
-npm run dev
-npm run lint
-npm run build
 ```
+python scripts/build-venue-data.py database/data/venues.json
+```
+
+`scripts/.cache/` に取得済みの応答が残るので、再実行しても必要な分しか
+Overpass に問い合わせない。取得できなかった県は、そのキャッシュを消して
+再実行すれば埋まる。
+
+## 構成
+
+| URL | 内容 |
+|---|---|
+| `/` | 種類別・都道府県別の入口 |
+| `/kinds/{種類}` | 種類ごとの全国一覧（stadium / hall / livehouse / exhibition / theatre） |
+| `/areas/{ローマ字}` | 都道府県ごとの会場一覧 |
+| `/venues/{slug}` | 会場ページ（最寄り駅・収容人数・公式サイト・出典） |
+| `/about` | データの出所と、扱っていないことの説明 |
+
+## デプロイ
+
+main へ push すると GitHub Actions が Xserver へ rsync する。
+データベースは使わないので migrate も seed も無い。
+必要なシークレット: `SSH_HOST` `SSH_USERNAME` `SSH_PRIVATE_KEY` `APP_KEY`。
+任意: `GA_MEASUREMENT_ID` `GOOGLE_SITE_VERIFICATION`。
